@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Data & artifacts (never committed)
+data/
+checkpoints/
+results/
+runs/
+*.pt
+*.onnx
+
+# OS
+.DS_Store
+Thumbs.db
