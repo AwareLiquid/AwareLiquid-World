@@ -24,15 +24,26 @@ Pilot history (300-step CPU smoke, 3 seeds, documented BEFORE the full run):
   oscillations systematically favoured the wrong (low-k) candidates;
 - velocity-continuity was added to C — did NOT help (same-context candidates
   share boundary conditions), C stays weak; S (smoothness) is the load-bearing
-  term (corr +0.41~+0.53);
+  term at 300 steps (corr +0.41~+0.53);
 - F (deviation-from-mean sharpness) was ANTI-correlated with correctness
   (corr -0.41) — weight set to 0 with this note;
 - the initial "sel_ratio < 0.5" bar was UNCALIBRATED for a ~0.4-correlated
-  selector (pilot achievable: 0.79-0.83), so the registered criterion is:
-  PASS = corr(V,-err) > 0.3 in >=3/5 seeds AND sel_ratio < 0.9 in >=3/5.
+  selector (pilot achievable: 0.79-0.83).
+
+FULL-BUDGET result (8000 steps) — the smoke signal did NOT survive:
+- v0 (boundary C + smoothness S): all components collapse to |corr| < 0.1;
+  V-selection ~ random (seed 0: V-sel 0.078 vs random 0.075, corr 0.052).
+- v1 (curvature-match Cm, added after seeing v0 fail): also fails
+  (seed 0 local: Cm corr -0.10, S +0.01, V corr -0.050).
+- Conclusion: analytic path-intrinsic proxies do not identify the best latent
+  sample once the predictor is trained; the 300-step signal was undertraining
+  diversity. V works on STRUCTURALLY heterogeneous hypothesis spaces (see the
+  Kepler prototype: survivor-conic fraction 1.0 vs 0.125 with V on/off) but
+  not on same-structure latent samples. Fix direction: a LEARNED/adaptive V.
+  This is an honest DEAD for the analytic V prototype at full budget.
 
 Run:
-    python -m experiments.world_m1.train_v --steps 8000 --seeds 5
+    python -m experiments.world_m1.train_v --steps 8000 --seeds 5 --variant v1
 """
 
 from __future__ import annotations
@@ -67,13 +78,12 @@ def _participation_ratio(path: torch.Tensor) -> torch.Tensor:
 
 
 def v_components(paths: torch.Tensor, h_last: torch.Tensor,
-                 h_prev: torch.Tensor | None = None) -> dict:
-    """paths (B,P,T,D); h_last/h_prev (B,D). Returns raw C/S/F/K each (B,P)."""
+                 h_prev: torch.Tensor | None = None,
+                 ctx_z: torch.Tensor | None = None) -> dict:
+    """paths (B,P,T,D); h_last/h_prev (B,D); ctx_z (B,Tc,D) context latents.
+    Returns raw C/Cm/S/F/K each (B,P)."""
     b, p, t, d = paths.shape
-    # C: consistency — boundary continuity (position AND velocity): a physical
-    # continuation matches both the last context state and its trend. In the
-    # spring domain the hidden k is carried mainly by the VELOCITY, so the
-    # velocity term is the regime-discriminative one.
+    # C: boundary continuity (position AND velocity)
     c_pos = -((paths[:, :, 0] - h_last.unsqueeze(1)) ** 2).mean(-1)      # (B,P)
     if h_prev is not None:
         v_ctx = h_last - h_prev                                          # (B,D)
@@ -89,25 +99,43 @@ def v_components(paths: torch.Tensor, h_last: torch.Tensor,
     f = ((paths - paths.mean(dim=1, keepdim=True)) ** 2).mean(dim=(2, 3))
     # K: complexity — dimensional redundancy (participation ratio)
     k = _participation_ratio(paths)
-    return {"C": c, "S": s, "F": f, "K": k}
+    # Cm (v1): CURVATURE MATCH — the context reveals the regime's curvature
+    # scale; the correct continuation has the SAME scale (the v0 boundary-C
+    # fails because all paths share the condition point; S alone carries no
+    # regime signal). curv(x) = mean |second difference| over (t, d).
+    if ctx_z is not None:
+        ctx_dd = ctx_z[:, 2:] - 2 * ctx_z[:, 1:-1] + ctx_z[:, :-2]       # (B,Tc-2,D)
+        curv_ctx = ctx_dd.abs().mean(dim=(1, 2))                          # (B,)
+        curv_path = dd.abs().mean(dim=(2, 3))                             # (B,P)
+        cm = -(curv_path - curv_ctx.unsqueeze(1)).abs()
+    else:
+        cm = torch.zeros_like(s)
+    return {"C": c, "S": s, "F": f, "K": k, "Cm": cm}
+
+
+# v0: 边界一致性 + 平滑 + 复杂度（全量训练下失效，见 pilot 记录）
+# v1: 曲率匹配 Cm 主导（上下文揭示制度的曲率尺度，正确续轨同尺度）
+VARIANTS = {
+    "v0": {"C": 0.5, "Cm": 0.0, "S": 1.0, "F": 0.0, "K": 0.5},
+    "v1": {"C": 0.0, "Cm": 1.0, "S": 0.5, "F": 0.0, "K": 0.5},
+}
 
 
 def v_score(comp: dict, weights: dict | None = None) -> torch.Tensor:
     """Normalised weighted V: (B,P). Normalise each term across P per sample.
 
-    Default weights from the smoke-run diagnostics (documented, not tuned on
-    the full run): F (deviation-from-mean "sharpness") was ANTI-correlated
-    with correctness (corr -0.41) — its proxy is wrong for this domain, so it
-    gets weight 0; the load-bearing term is S (smoothness, corr +0.48).
+    F (deviation-from-mean "sharpness") stays weight 0: pilot-measured
+    ANTI-correlation (-0.41~-0.52) — wrong proxy for this domain.
     """
     if weights is None:
-        weights = {"C": 0.5, "S": 1.0, "F": 0.0, "K": 0.5}
+        weights = VARIANTS["v1"]
     out = None
-    for name, sign in (("C", +1), ("S", +1), ("F", +1), ("K", -1)):
+    for name in ("C", "Cm", "S", "F", "K"):
         x = comp[name]
         mu = x.mean(dim=1, keepdim=True)
         sd = x.std(dim=1, keepdim=True) + 1e-6
-        term = sign * weights[name] * (x - mu) / sd
+        sign = -1 if name == "K" else +1
+        term = sign * weights.get(name, 0.0) * (x - mu) / sd
         out = term if out is None else out + term
     return out
 
@@ -118,7 +146,8 @@ def v_score(comp: dict, weights: dict | None = None) -> torch.Tensor:
 
 def train_seed(steps: int, seed: int, k_lo: float, k_hi: float,
                batch: int = 64, t_ctx: int = 8, t_fut: int = 32,
-               n_paths: int = 8, lr: float = 3e-3) -> dict:
+               n_paths: int = 8, lr: float = 3e-3,
+               weights: dict | None = None) -> dict:
     torch.manual_seed(seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model = MultiPathWorldModel(2, 64, 8, n_paths, t_fut).to(dev)
@@ -150,8 +179,8 @@ def train_seed(steps: int, seed: int, k_lo: float, k_hi: float,
         h_last = z_ctx[:, -1]
         paths = model.predict_paths(ctx)                     # (B,P,T,D)
         per_err = ((paths - z_fut.unsqueeze(1)) ** 2).mean(dim=(2, 3)).sqrt()  # (B,P)
-        comp = v_components(paths, h_last, z_ctx[:, -2])
-        v = v_score(comp)                                    # (B,P)
+        comp = v_components(paths, h_last, z_ctx[:, -2], ctx_z=z_ctx)
+        v = v_score(comp, weights=weights)                    # (B,P)
 
     idx_v = v.argmax(dim=1)
     err_v = per_err.gather(1, idx_v[:, None]).squeeze(1).mean().item()
@@ -169,7 +198,7 @@ def train_seed(steps: int, seed: int, k_lo: float, k_hi: float,
 
     corr = _rank_corr(v, -per_err)
     per_comp_corr = {name: _rank_corr(comp[name], -per_err)
-                     for name in ("C", "S", "F", "K")}
+                     for name in ("C", "Cm", "S", "F", "K")}
 
     # ablation "V off": random pick, 16 draws for a stable estimate
     g = torch.Generator().manual_seed(seed)
@@ -191,14 +220,17 @@ def main():
     ap.add_argument("--k-lo", type=float, default=1.0)
     ap.add_argument("--k-hi", type=float, default=4.0)
     ap.add_argument("--n-paths", type=int, default=8)
+    ap.add_argument("--variant", choices=("v0", "v1"), default="v1")
     args = ap.parse_args()
+    weights = VARIANTS[args.variant]
 
-    print(f"=== World V-module: V(h) scoring on {args.n_paths}-path candidates "
+    print(f"=== World V-module [{args.variant}]: V(h) scoring on "
+          f"{args.n_paths}-path candidates "
           f"(spring hidden k~U({args.k_lo},{args.k_hi})) ===")
     rows = []
     for seed in range(args.seeds):
         r = train_seed(args.steps, seed, args.k_lo, args.k_hi,
-                       n_paths=args.n_paths)
+                       n_paths=args.n_paths, weights=weights)
         rows.append(r)
         print(f"  seed {seed}: V-sel {r['err_v']:.4f} | random {r['err_rand']:.4f} "
               f"| oracle {r['err_best']:.4f} | V-off {r['err_voff']:.4f} "
