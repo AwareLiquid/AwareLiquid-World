@@ -14,11 +14,15 @@ Design:
   to M1's single-level numbers (spring +83.3/83.8/81.4%,
   orbit +83.7/74.4/74.5%).
 
-Success (pre-registered): M5 probe gain > M1 single-level gain + 2 points on
->=3/5 seeds (per modality); no collapse.
+Success (pre-registered): deep-supervision gain > its OWN lambda=0 control
+(the same code path with the same sigreg regulariser) on >=3/5 seeds — the
+PRIMARY test, because the M1 reference numbers were produced WITHOUT sigreg,
+so comparing against them directly is confounded. M1 ref is reported as a
+secondary sanity anchor only.
 
 Run:
     python -m experiments.world_m1.train_m5 --kind spring --steps 8000 --seeds 5
+    python -m experiments.world_m1.train_m5 --kind spring --steps 8000 --seeds 5 --deep-lambda 0.0
 """
 
 from __future__ import annotations
