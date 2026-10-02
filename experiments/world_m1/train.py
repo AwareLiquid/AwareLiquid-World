@@ -16,7 +16,8 @@ import argparse
 import torch
 import torch.nn as nn
 
-from world.objectives import masked_latent_prediction_loss, mask_spans
+from world.objectives import (masked_latent_prediction_loss, mask_spans,
+                              sigreg)
 
 from .data import make_dataset
 from .encoder import LiquidEncoder
@@ -44,7 +45,7 @@ def latent_std(z: torch.Tensor) -> float:
 
 def train_seed(kind: str, seed: int, steps: int, T: int = 64,
                batch: int = 64, mask_ratio: float = 0.5,
-               mean_span: int = 6) -> dict:
+               mean_span: int = 6, sigreg_weight: float = 0.0) -> dict:
     torch.manual_seed(seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     enc = LiquidEncoder(2 if kind == "spring" else 4, d=64, n_layers=2).to(dev)
@@ -59,6 +60,8 @@ def train_seed(kind: str, seed: int, steps: int, T: int = 64,
         z = enc(traj)
         keep = mask_spans(T, mask_ratio, mean_span, g)
         loss = masked_latent_prediction_loss(z, keep, pred)
+        if sigreg_weight > 0:
+            loss = loss + sigreg_weight * sigreg(z)
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(list(enc.parameters()) + list(pred.parameters()), 1.0)
@@ -101,12 +104,15 @@ def main():
     ap.add_argument("--kind", default="spring", choices=("spring", "orbit"))
     ap.add_argument("--steps", type=int, default=8000)
     ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--sigreg-weight", type=float, default=0.0)
     args = ap.parse_args()
 
-    print(f"=== World M1: masked-latent prediction ({args.kind}) ===")
+    tag = f" (+SIGReg {args.sigreg_weight})" if args.sigreg_weight > 0 else ""
+    print(f"=== World M1/M2: masked-latent prediction ({args.kind}){tag} ===")
     rows = []
     for seed in range(args.seeds):
-        r = train_seed(args.kind, seed, args.steps)
+        r = train_seed(args.kind, seed, args.steps,
+                       sigreg_weight=args.sigreg_weight)
         rows.append(r)
         print(f"  seed {seed}: probe {r['probe_mse']:.4f} vs baseline "
               f"{r['base_mse']:.4f}  rel_gain {r['rel_gain']*100:.1f}%  "
