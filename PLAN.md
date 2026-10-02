@@ -54,6 +54,24 @@ All in `m1/mt_lnn`, all already tested in their own right:
 - **Metric**: trajectory error vs the physics_ops symplectic rollout baseline.
 - **Success**: within 1.5× of the analytic baseline on the spring/orbit suite.
 
+## 3.5 跨窗口状态板（2026-10-03，EverestAn 多窗口在同一个仓库并行）
+
+窗口 A（本窗口）按序补 M1-M4；窗口 B 已冲 M5/M7/M8。为避免互相踩，
+当前里程碑归属与交叉提示如下：
+
+| 里程碑 | 状态 | 归属/提示 |
+|---|---|---|
+| M1 掩码隐空间 | ✅ PASS 6/6 | 窗口 A（results 见 experiments/world_m1/RESULTS.md） |
+| M2 SIGReg | ⚠️ 5/5 无塌缩，seed0 增益 19.5% 离群 | 窗口 A。**给窗口 B 的提示：M8 d64 42.1% 的"sigreg 拖低"与 M2 的 seed0 离群同源——SIGReg 权重未扫（固定 0.01）。M8 重试前先做权重扫 0.001/0.01/0.1 × ≥3 seeds，d64 档很可能恢复** |
+| M3 隐变量多路径 | ✅ PASS 覆盖率 0.969 | 窗口 A |
+| M4 动作条件化 | 🔄 服务器训练中（spring+force）| 窗口 A。预赛：cond 0.00004 vs blind 0.00087 vs 持久化 0.10111（力占主导设定，动作信息被吃到）。与窗口 B 的 M5（λ 多路径检验）不重叠 |
+| M5 λ 多路径 | ❌ DEAD | 窗口 B |
+| M7 潜空间 MPC | ✅ PASS | 窗口 B |
+| M8 极简世界模型 | ❌ 见 SIGReg 提示 | 窗口 B |
+
+**汇合纪律**：里程碑结果各自写进 `experiments/world_m1/RESULTS.md`；状态
+变更改本板；不互删对方的登记。
+
 ## 4. Data strategy
 
 - Start with what M1 already ships: NASA battery (irregular streams), physics
