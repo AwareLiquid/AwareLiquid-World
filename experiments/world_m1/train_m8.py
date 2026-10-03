@@ -83,6 +83,8 @@ def main():
     ap.add_argument("--steps", type=int, default=8000)
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--widths", default="64,128,256")
+    ap.add_argument("--sigreg-weight", type=float, default=0.01,
+                    help="0.01 有 seed 离群（10-04 权重扫）；M8 重试建议 0.001")
     args = ap.parse_args()
     widths = [int(w) for w in args.widths.split(",")]
 
@@ -92,7 +94,8 @@ def main():
     for d in widths:
         gains = []
         for seed in range(args.seeds):
-            r = train_one(args.kind, seed, args.steps, d)
+            r = train_one(args.kind, seed, args.steps, d,
+                          sigreg_weight=args.sigreg_weight)
             rows.append(r)
             gains.append(r["rel_gain"])
             print(f"  d={d} seed {seed}: params {r['params']:,}  "
