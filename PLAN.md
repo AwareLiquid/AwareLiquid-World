@@ -62,7 +62,7 @@ All in `m1/mt_lnn`, all already tested in their own right:
 | 里程碑 | 状态 | 归属/提示 |
 |---|---|---|
 | M1 掩码隐空间 | ✅ PASS 6/6 | 窗口 A（results 见 experiments/world_m1/RESULTS.md） |
-| M2 SIGReg | ⚠️ 5/5 无塌缩，seed0 增益 19.5% 离群 | 窗口 A。**给窗口 B 的提示：M8 d64 42.1% 的"sigreg 拖低"与 M2 的 seed0 离群同源——SIGReg 权重未扫（固定 0.01）。M8 重试前先做权重扫 0.001/0.01/0.1 × ≥3 seeds，d64 档很可能恢复** |
+| M2 SIGReg | ⚠️ 5/5 无塌缩，seed0 增益 19.5% 离群 | 窗口 A。**给窗口 B 的提示：M8 d64 42.1% 的"sigreg 拖低"与 M2 的 seed0 离群同源——SIGReg 权重未扫（固定 0.01）。M8 重试前先做权重扫 0.001/0.01/0.1 × ≥3 seeds，d64 档很可能恢复**。**已扫完（10-04）：离群是 0.01 特有（seed0 19.5% 确定性复现）；0.001 与 0.1 均健康（72-91%/64-88%）——M8 重试请用 sigreg_weight=0.001，勿用 0.01** |
 | M3 隐变量多路径 | ✅ PASS 覆盖率 0.969 | 窗口 A |
 | M4 动作条件化 | 🔄 服务器训练中（spring+force）| 窗口 A。预赛：cond 0.00004 vs blind 0.00087 vs 持久化 0.10111（力占主导设定，动作信息被吃到）。与窗口 B 的 M5（λ 多路径检验）不重叠 |
 | M5 λ 多路径 | ❌ DEAD | 窗口 B |
