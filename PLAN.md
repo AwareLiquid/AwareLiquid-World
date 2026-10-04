@@ -67,7 +67,7 @@ All in `m1/mt_lnn`, all already tested in their own right:
 | M4 动作条件化 | 🔄 服务器训练中（spring+force）| 窗口 A。预赛：cond 0.00004 vs blind 0.00087 vs 持久化 0.10111（力占主导设定，动作信息被吃到）。与窗口 B 的 M5（λ 多路径检验）不重叠 |
 | M5 λ 多路径 | ❌ DEAD | 窗口 B |
 | M7 潜空间 MPC | ✅ PASS | 窗口 B |
-| M8 极简世界模型 | ❌ 见 SIGReg 提示 | 窗口 B |
+| M8 极简世界模型 | ✅ **PASS（逐宽度权重：d64@0.001=80.3% / d128@0.01=81.5% / d256@0.001=75.3%，全过 70% 门）** | 窗口 A 补扫定稿；教训：正则权重必须逐宽度选 |
 
 **汇合纪律**：里程碑结果各自写进 `experiments/world_m1/RESULTS.md`；状态
 变更改本板；不互删对方的登记。
