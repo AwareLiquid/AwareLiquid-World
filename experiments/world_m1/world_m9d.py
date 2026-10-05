@@ -76,15 +76,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=6000)
     ap.add_argument("--seeds", type=int, default=5)
+    ap.add_argument("--n-calib", type=int, default=512,
+                    help="calibration set size; 512 gives ~1.8%% level SE, "
+                         "1024 ~1.2%%")
     args = ap.parse_args()
 
     print(f"=== M9d: CQR calibration of quantile bands "
-          f"(steps={args.steps} seeds={args.seeds}) ===")
+          f"(steps={args.steps} seeds={args.seeds} n_calib={args.n_calib}) ===")
     rows = []
     for seed in range(args.seeds):
         model = FadeWorldQ()
         train(model, steps=args.steps, seed=seed)
-        Q = bands_and_Q(model, calib_seed=CALIB_BASE + seed)
+        Q = bands_and_Q(model, calib_seed=CALIB_BASE + seed,
+                        n_calib=args.n_calib)
         r = evaluate_cqr(model, Q, seed=EVAL_BASE + seed)
         rows.append(r)
         print(f"  seed {seed}: cqr h900 {r['cqr_h900']:.3f} "
