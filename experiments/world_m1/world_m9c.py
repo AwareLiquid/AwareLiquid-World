@@ -97,20 +97,27 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=6000)
     ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--latent", type=int, default=8)
+    ap.add_argument("--d", type=int, default=64)
+    ap.add_argument("--tag", type=str, default="base")
     args = ap.parse_args()
 
-    print("=== M9c: quantile bands (learned directly) ===")
+    print(f"=== M9c grid [{args.tag}]: steps={args.steps} "
+          f"latent={args.latent} d={args.d} seeds={args.seeds} ===")
     rows = []
     for seed in range(args.seeds):
-        model = FadeWorldQ()
+        model = FadeWorldQ(d=args.d, latent=args.latent)
         train(model, steps=args.steps, seed=seed)
         r = evaluate(model)
         rows.append(r)
         print(f"  seed {seed}: " + "  ".join(f"{k}={v:.3f}" for k, v in r.items()),
               flush=True)
 
-    ok = all(0.75 <= r["h900"] <= 0.85 for r in rows)
-    print(f"\nall seeds h900 in [0.75, 0.85]: {ok}")
+    n_ok = sum(1 for r in rows if 0.75 <= r["h900"] <= 0.85)
+    h = sorted(r["h900"] for r in rows)
+    med = h[len(h) // 2]
+    print(f"\nin-range h900: {n_ok}/{len(rows)}  median {med:.3f}")
+    ok = n_ok >= 4 and 0.77 <= med <= 0.83
     print("VERDICT:", "PASS" if ok else "FAIL")
 
 
