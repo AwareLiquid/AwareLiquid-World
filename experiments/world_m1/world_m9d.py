@@ -36,7 +36,7 @@ EVAL_BASE = 15000000
 
 @torch.no_grad()
 def bands_and_Q(model, batch: int = 512, calib_seed: int = CALIB_BASE,
-                n_calib: int = 512) -> torch.Tensor:
+                n_calib: int = 512, target: float = TARGET) -> torch.Tensor:
     """Per-timestep conformal correction Q_t from a held-out calibration set."""
     model.eval()
     obs, fut = make_fade(n_calib, seed=calib_seed)
@@ -44,7 +44,7 @@ def bands_and_Q(model, batch: int = 512, calib_seed: int = CALIB_BASE,
     q = model.decode(*model.encode(obs))
     lo, hi = q[:, 0], q[:, 2]
     E = torch.maximum(lo - y, y - hi)              # (n, 900)
-    level = min(1.0, TARGET * (1.0 + 1.0 / n_calib))
+    level = min(1.0, target * (1.0 + 1.0 / n_calib))
     return torch.quantile(E, level, dim=0)         # (900,)
 
 
@@ -79,16 +79,21 @@ def main():
     ap.add_argument("--n-calib", type=int, default=512,
                     help="calibration set size; 512 gives ~1.8%% level SE, "
                          "1024 ~1.2%%")
+    ap.add_argument("--target", type=float, default=TARGET,
+                    help="nominal conformal level; observed realized coverage "
+                         "sits ~3pt below nominal (systematic), so 0.83 "
+                         "recenters the realized median at ~0.80")
     args = ap.parse_args()
 
     print(f"=== M9d: CQR calibration of quantile bands "
-          f"(steps={args.steps} seeds={args.seeds} n_calib={args.n_calib}) ===")
+          f"(steps={args.steps} seeds={args.seeds} n_calib={args.n_calib} "
+          f"target={args.target}) ===")
     rows = []
     for seed in range(args.seeds):
         model = FadeWorldQ()
         train(model, steps=args.steps, seed=seed)
         Q = bands_and_Q(model, calib_seed=CALIB_BASE + seed,
-                        n_calib=args.n_calib)
+                        n_calib=args.n_calib, target=args.target)
         r = evaluate_cqr(model, Q, seed=EVAL_BASE + seed)
         rows.append(r)
         print(f"  seed {seed}: cqr h900 {r['cqr_h900']:.3f} "
